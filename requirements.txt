@@ -1,2 +1,14 @@
+# requirements.txt
+# 이 파일은 현재 프로젝트를 실행하는 데 필요한 기본 패키지 목록입니다.
+# 지금 단계에서는 "정확한 버전 고정"보다 "실행 가능한 최소 패키지 정리"가 목적입니다.
+# 나중에 프로젝트가 더 안정화되면 pip freeze 로 버전을 고정할 수 있습니다.
+
+Django
+djangorestframework
+djangorestframework-simplejwt
+django-cors-headers
+django-environ
+drf-yasg
+firebase-admin
 google-generativeai
 python-dotenv

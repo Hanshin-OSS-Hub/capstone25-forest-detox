@@ -62,6 +62,7 @@ INSTALLED_APPS = [
     # 서드파티 앱
     "rest_framework",
     "rest_framework_simplejwt",
+    "rest_framework_simplejwt.token_blacklist",
     "corsheaders",
     "drf_yasg",
 

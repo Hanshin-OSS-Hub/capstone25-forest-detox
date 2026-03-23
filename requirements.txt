@@ -10,5 +10,5 @@ django-cors-headers
 django-environ
 drf-yasg
 firebase-admin
-google-generativeai
 python-dotenv
+openai

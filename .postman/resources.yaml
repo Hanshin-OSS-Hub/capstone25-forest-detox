@@ -1,0 +1,14 @@
+# Use this workspace to collaborate
+workspace:
+  id: 1b260a53-7604-4ebb-8ad2-6763a755822b
+
+localResources:
+  specs:
+    - ..\detox-env\Lib\site-packages\google\cloud\common_resources.proto
+    - ..\detox-env\Lib\site-packages\google\cloud\extended_operations.proto
+    - ..\detox-env\Lib\site-packages\google\api\annotations.proto
+    - ..\detox-env\Lib\site-packages\google\api\auth.proto
+    - ..\detox-env\Lib\site-packages\google\api\backend.proto
+    - ..\detox-env\Lib\site-packages\google\api\billing.proto
+    - ..\detox-env\Lib\site-packages\google\api\client.proto
+    - ..\detox-env\Lib\site-packages\google\api\config_change.proto

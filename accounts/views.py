@@ -1,77 +1,81 @@
 # accounts/views.py
+
+# DRF 기본 클래스와 응답 객체를 import 합니다.
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
+
+# 권한 설정용 permission classes 입니다.
 from rest_framework.permissions import AllowAny, IsAuthenticated
 
+# SimpleJWT 기본 로그인 View 와 refresh token 객체를 import 합니다.
 from rest_framework_simplejwt.views import TokenObtainPairView
-
-from .serializers import (
-    SignUpSerializer,
-    EmailOrUsernameTokenObtainPairSerializer,  # ✅ 여기로 변경
-    MeSerializer,
-    FirebaseLinkSerializer,
-)
-
-from firebase_admin import auth as firebase_auth
 from rest_framework_simplejwt.tokens import RefreshToken
+
+# Firebase Admin SDK 의 auth 기능을 사용합니다.
+from firebase_admin import auth as firebase_auth
+
+# 현재 프로젝트의 User 모델을 가져옵니다.
 from django.contrib.auth import get_user_model
 
-# ✅ Firebase sign_in_provider → 우리 DB provider 값으로 표준화하는 함수
+# serializer 들을 import 합니다.
+from .serializers import (
+    SignUpSerializer,
+    EmailOrUsernameTokenObtainPairSerializer,
+    MeSerializer,
+    FirebaseLinkSerializer,
+    LogoutSerializer,
+    UserNotificationSettingSerializer,
+)
+
+# 알림 설정 모델을 import 합니다.
+from .models import UserNotificationSetting
+
+# 현재 User 모델을 변수로 꺼내둡니다.
+User = get_user_model()
+
+
 def map_firebase_provider(sign_in_provider: str) -> str:
     """
-    Firebase 토큰(decoded)에 들어있는 sign_in_provider 값을
-    우리 서비스에서 쓰기 좋은 provider 문자열로 통일합니다.
-
-    Firebase 예시값:
-    - "password"   : Firebase Email/Password 로그인
-    - "google.com" : Google 로그인
-    - (카카오 OIDC 연동 시) "oidc.kakao" 같은 형태가 될 수 있음
-    - 그 외 "custom", "anonymous" 등도 가능
-
-    우리 DB에 저장할 표준값(추천):
-    - local
-    - google
-    - kakao
-    - firebase_password
-    - firebase (기타)
+    Firebase 토큰 안의 sign_in_provider 값을
+    우리 서비스의 provider 값으로 통일하는 함수입니다.
     """
+
     if not sign_in_provider:
-        return "firebase"
+        return User.ProviderChoices.FIREBASE
 
     p = sign_in_provider.lower()
 
-    # 1) Firebase 이메일/비번 로그인
     if p == "password":
-        return "firebase_password"
+        return User.ProviderChoices.FIREBASE_PASSWORD
 
-    # 2) 구글 로그인
     if p == "google.com":
-        return "google"
+        return User.ProviderChoices.GOOGLE
 
-    # 3) 카카오 로그인(연동 방식에 따라 문자열이 달라질 수 있어 넉넉히 처리)
-    #    - 예: "oidc.kakao", "kakao", "kakao.com" 등
     if "kakao" in p:
-        return "kakao"
+        return User.ProviderChoices.KAKAO
 
-    # 4) 그 외는 firebase로 묶기
-    return "firebase"
+    return User.ProviderChoices.FIREBASE
 
 
 class SignUpView(APIView):
     """
-    ✅ POST /api/accounts/signup/
-    body: { "email": "...", "username": "...", "password": "..." }
+    일반 회원가입 API 입니다.
+    POST /api/accounts/signup/
     """
+
     permission_classes = [AllowAny]
 
     def post(self, request):
         serializer = SignUpSerializer(data=request.data)
+
         if serializer.is_valid():
             user = serializer.save()
+
             return Response(
                 {
                     "success": True,
+                    "message": "회원가입이 완료되었습니다.",
                     "user": {
                         "id": user.id,
                         "email": user.email,
@@ -81,164 +85,60 @@ class SignUpView(APIView):
                 },
                 status=status.HTTP_201_CREATED,
             )
+
         return Response(
-            {"success": False, "errors": serializer.errors},
+            {
+                "success": False,
+                "errors": serializer.errors,
+            },
             status=status.HTTP_400_BAD_REQUEST,
         )
 
 
 class EmailLoginView(TokenObtainPairView):
     """
-    ✅ POST /api/accounts/login/
-    body: { "email": "...", "password": "..." }  또는 { "username": "...", "password": "..." }
-    응답: { "access": "...", "refresh": "...", "user": {...} }
+    이메일 또는 username 기반 JWT 로그인 API 입니다.
+    POST /api/accounts/login/
     """
-    permission_classes = [AllowAny]
-    serializer_class = EmailOrUsernameTokenObtainPairSerializer  # ✅ 여기로 변경
 
-User = get_user_model()
+    permission_classes = [AllowAny]
+    serializer_class = EmailOrUsernameTokenObtainPairSerializer
+
 
 class FirebaseLoginView(APIView):
     """
-    ✅ POST /api/accounts/firebase/login/
-    body: { "id_token": "FIREBASE_ID_TOKEN" }
+    Firebase 로그인 후 Flutter 가 전달한 id_token 을 검증하고,
+    우리 서비스용 JWT 를 발급하는 API 입니다.
 
-    - Flutter가 Firebase Auth 로그인 성공 후 받은 idToken을 보냄
-    - 백엔드는 Firebase Admin으로 검증
-    - provider/provider_uid로 User 생성/조회
-    - 우리 서비스 JWT(SimpleJWT) 발급
+    POST /api/accounts/firebase/login/
+    body:
+    {
+        "id_token": "FIREBASE_ID_TOKEN"
+    }
     """
+
     permission_classes = [AllowAny]
 
     def post(self, request):
+        # Flutter 가 보낸 Firebase id_token 을 꺼냅니다.
         id_token = request.data.get("id_token")
-        if not id_token:
-            return Response({"detail": "id_token이 필요합니다."}, status=status.HTTP_400_BAD_REQUEST)
 
+        if not id_token:
+            return Response(
+                {"detail": "id_token이 필요합니다."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # 1) Firebase 토큰 검증
         try:
             decoded = firebase_auth.verify_id_token(id_token)
+
             firebase_uid = decoded.get("uid")
             email = decoded.get("email", "") or ""
             name = decoded.get("name", "") or ""
             picture = decoded.get("picture", "") or ""
 
-            # 어떤 소셜로 로그인했는지 (google.com / password / custom / etc)
-            sign_in_provider = (decoded.get("firebase") or {}).get("sign_in_provider", "firebase")
-
-        except Exception as e:
-            return Response({"detail": f"Firebase 토큰 검증 실패: {str(e)}"}, status=status.HTTP_401_UNAUTHORIZED)
-
-        # ✅ (안전장치) uid가 없으면 사용자 식별이 불가능하므로 실패 처리
-        if not firebase_uid:
-            return Response({"detail": "Firebase 토큰에 uid가 없습니다."}, status=status.HTTP_401_UNAUTHORIZED)
-
-        # ✅ DB에 저장할 provider는 표준화해서 저장
-        provider = map_firebase_provider(sign_in_provider)
-        # ✅ provider_uid는 Firebase uid로 고정 (Firebase 기준 고유 식별자)
-        provider_uid = firebase_uid
-
-        # ✅ (안전장치) Firebase 계정은 이메일이 없을 수도 있음(특히 카카오/동의 설정)
-        # User.email이 unique라면 빈 문자열로 저장하면 문제 생길 수 있어 임시 이메일을 만들어 둠
-        if not email:
-            email = f"{provider}_{provider_uid}@no-email.local"
-
-        # 1) provider_uid로 먼저 찾기 (가장 정확)
-        user = User.objects.filter(provider=provider, provider_uid=provider_uid).first()
-
-        # 2) 없으면 email로 “계정 연결” 정책
-        if user is None and email:
-            existing = User.objects.filter(email=email).first()
-            if existing:
-                # 정책 A(추천): local 계정이 있으면 "연결할지" 따로 처리하거나 일단 막기
-                # 여기서는 안전하게 "막기"로 해둘게 (혼선 방지)
-                if getattr(existing, "provider", "") in ["", "local"]:
-                    return Response(
-                        {"detail": "동일 이메일의 local 계정이 이미 존재합니다. 계정 연결 정책이 필요합니다."},
-                        status=status.HTTP_409_CONFLICT,
-                    )
-                # 이미 다른 provider 계정이면 그대로 사용
-                user = existing
-
-                # ✅ 기존 계정이라면 provider/provider_uid를 최신 로그인 정보로 정리
-                user.provider = provider
-                user.provider_uid = provider_uid
-
-                # ✅ User 모델에 avatar_url 필드가 있을 때만 picture 저장 (이미 값이 없을 때만 채움)
-                if hasattr(User, "avatar_url") and picture and not getattr(user, "avatar_url", ""):
-                    user.avatar_url = picture
-
-                user.save()
-
-        # 3) 그래도 없으면 새로 생성
-        if user is None:
-            # username 자동 생성 (중복 피하기)
-            base_username = (email.split("@")[0] if email else f"user_{provider_uid[:8]}")
-            username = base_username
-            i = 1
-            while User.objects.filter(username=username).exists():
-                i += 1
-                username = f"{base_username}{i}"
-
-            create_kwargs = {
-                "email": email,
-                "username": username,
-                "provider": provider,
-                "provider_uid": provider_uid,
-                "is_active": True,
-            }
-
-            # ✅ User 모델에 avatar_url 필드가 있을 때만 picture 저장
-            if hasattr(User, "avatar_url") and picture:
-                create_kwargs["avatar_url"] = picture
-
-            user = User.objects.create(**create_kwargs)
-
-        # ✅ JWT 발급
-        refresh = RefreshToken.for_user(user)
-        data = {
-            "refresh": str(refresh),
-            "access": str(refresh.access_token),
-            "user": {
-                "id": user.id,
-                "email": user.email,
-                "username": getattr(user, "username", ""),
-                "provider": getattr(user, "provider", ""),
-            }
-        }
-        return Response(data, status=status.HTTP_200_OK)
-
-
-class FirebaseLinkView(APIView):
-    """
-    ✅ POST /api/accounts/firebase/link/
-    - local로 로그인된 사용자가 자신의 계정을 Firebase 계정과 "연결"하는 API
-
-    요청:
-      header: Authorization: Bearer <local access>
-      body: { "id_token": "<FIREBASE_ID_TOKEN>" }
-
-    동작:
-    1) Firebase id_token 검증
-    2) provider/provider_uid 추출 + provider 표준화
-    3) 이 provider/provider_uid가 다른 사용자에게 이미 연결되어 있으면 막기(409)
-    4) 현재 로그인된 사용자(request.user)에 provider/provider_uid를 저장 (= 연결)
-    5) (선택) 새 JWT 발급해서 반환 (권장: 바로 갱신해서 쓰기 편하게)
-    """
-    permission_classes = [IsAuthenticated]
-
-    def post(self, request):
-        serializer = FirebaseLinkSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-
-        id_token = serializer.validated_data["id_token"]
-
-        # ✅ 1) Firebase 토큰 검증
-        try:
-            decoded = firebase_auth.verify_id_token(id_token)
-            firebase_uid = decoded.get("uid")
-            email = decoded.get("email", "") or ""
-            picture = decoded.get("picture", "") or ""
-
+            # google.com, password, kakao 계열 문자열 등을 확인합니다.
             sign_in_provider = (decoded.get("firebase") or {}).get("sign_in_provider", "firebase")
 
         except Exception as e:
@@ -253,41 +153,151 @@ class FirebaseLinkView(APIView):
                 status=status.HTTP_401_UNAUTHORIZED
             )
 
-        # ✅ 2) provider 표준화 + provider_uid 결정
         provider = map_firebase_provider(sign_in_provider)
         provider_uid = firebase_uid
 
-        # ✅ 3) (중요) 이 Firebase 계정이 이미 다른 사용자에 연결되어 있으면 막기
-        conflict_user = User.objects.filter(provider=provider, provider_uid=provider_uid).exclude(id=request.user.id).first()
+        # Firebase 계정은 이메일이 없을 수 있으므로,
+        # 없는 경우 임시 이메일을 만들어 둡니다.
+        if not email:
+            email = f"{provider}_{provider_uid}@no-email.local"
+
+        # 2) provider + provider_uid 로 먼저 찾습니다.
+        user = User.objects.filter(provider=provider, provider_uid=provider_uid).first()
+
+        # 3) 없으면 email 로 기존 계정 탐색
+        if user is None and email:
+            existing = User.objects.filter(email=email).first()
+
+            if existing:
+                # local 계정과 같은 이메일이면 혼선을 막기 위해 우선 연결을 강제하지 않습니다.
+                if getattr(existing, "provider", "") == User.ProviderChoices.LOCAL:
+                    return Response(
+                        {"detail": "동일 이메일의 local 계정이 이미 존재합니다. 계정 연결 정책이 필요합니다."},
+                        status=status.HTTP_409_CONFLICT
+                    )
+
+                # 이미 다른 provider 계정이면 그 계정을 재사용합니다.
+                user = existing
+                user.provider = provider
+                user.provider_uid = provider_uid
+
+                if picture and not getattr(user, "avatar_url", ""):
+                    user.avatar_url = picture
+
+                user.save()
+
+        # 4) 그래도 없으면 새 사용자 생성
+        if user is None:
+            # username 자동 생성
+            base_username = email.split("@")[0] if email else f"user_{provider_uid[:8]}"
+            username = base_username
+            index = 1
+
+            while User.objects.filter(username=username).exists():
+                index += 1
+                username = f"{base_username}{index}"
+
+            user = User.objects.create(
+                email=email,
+                username=username,
+                provider=provider,
+                provider_uid=provider_uid,
+                avatar_url=picture if picture else None,
+                is_active=True,
+            )
+
+            # 새 사용자 생성 시 기본 알림 설정도 만들어 둡니다.
+            UserNotificationSetting.objects.get_or_create(user=user)
+
+        # 5) JWT 발급
+        refresh = RefreshToken.for_user(user)
+
+        return Response(
+            {
+                "success": True,
+                "message": "Firebase 로그인 성공",
+                "refresh": str(refresh),
+                "access": str(refresh.access_token),
+                "user": {
+                    "id": user.id,
+                    "email": user.email,
+                    "username": getattr(user, "username", ""),
+                    "provider": getattr(user, "provider", ""),
+                    "avatar_url": getattr(user, "avatar_url", None),
+                },
+            },
+            status=status.HTTP_200_OK
+        )
+
+
+class FirebaseLinkView(APIView):
+    """
+    local 로 로그인된 사용자가 자신의 계정에 Firebase 계정을 연결하는 API 입니다.
+    POST /api/accounts/firebase/link/
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        serializer = FirebaseLinkSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        id_token = serializer.validated_data["id_token"]
+
+        # 1) Firebase 토큰 검증
+        try:
+            decoded = firebase_auth.verify_id_token(id_token)
+            firebase_uid = decoded.get("uid")
+            email = decoded.get("email", "") or ""
+            picture = decoded.get("picture", "") or ""
+            sign_in_provider = (decoded.get("firebase") or {}).get("sign_in_provider", "firebase")
+
+        except Exception as e:
+            return Response(
+                {"detail": f"Firebase 토큰 검증 실패: {str(e)}"},
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+
+        if not firebase_uid:
+            return Response(
+                {"detail": "Firebase 토큰에 uid가 없습니다."},
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+
+        provider = map_firebase_provider(sign_in_provider)
+        provider_uid = firebase_uid
+
+        # 2) 이미 다른 유저가 같은 Firebase 계정을 사용 중이면 막습니다.
+        conflict_user = User.objects.filter(
+            provider=provider,
+            provider_uid=provider_uid
+        ).exclude(id=request.user.id).first()
+
         if conflict_user:
             return Response(
                 {"detail": "이 Firebase 계정은 이미 다른 사용자에 연결되어 있습니다."},
                 status=status.HTTP_409_CONFLICT
             )
 
-        # ✅ 4) (선택) Firebase email과 local email이 다르면 막을지 여부
-        # 초보자/안전 기준: 다르면 막는 게 안전
+        # 3) 이메일이 다르면 혼선 방지를 위해 막습니다.
         if email and request.user.email and (email.lower() != request.user.email.lower()):
             return Response(
-                {
-                    "detail": "Firebase 이메일과 현재 로그인된 이메일이 다릅니다. "
-                              "다른 계정에 연결할 수 없습니다."
-                },
+                {"detail": "Firebase 이메일과 현재 로그인된 이메일이 다릅니다. 다른 계정에 연결할 수 없습니다."},
                 status=status.HTTP_409_CONFLICT
             )
 
-        # ✅ 5) 연결 수행: 현재 사용자에 provider/provider_uid 저장
+        # 4) 연결 수행
         request.user.provider = provider
         request.user.provider_uid = provider_uid
 
-        # ✅ avatar_url 필드가 있으면 저장(없으면 무시)
-        if hasattr(User, "avatar_url") and picture:
+        if picture:
             request.user.avatar_url = picture
 
         request.user.save()
 
-        # ✅ 6) 연결 후 새 JWT 발급(권장)
+        # 5) 연결 후 새 JWT 발급
         refresh = RefreshToken.for_user(request.user)
+
         return Response(
             {
                 "success": True,
@@ -306,16 +316,109 @@ class FirebaseLinkView(APIView):
         )
 
 
-
-
-
 class MeView(APIView):
     """
-    ✅ GET /api/accounts/me/
-    header: Authorization: Bearer <access>
+    현재 로그인한 사용자 정보를 조회하는 API 입니다.
+    GET /api/accounts/me/
     """
+
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
+        # 알림 설정이 아직 없는 사용자라면 기본값으로 만들어 둡니다.
+        UserNotificationSetting.objects.get_or_create(user=request.user)
+
         serializer = MeSerializer(request.user)
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class NotificationSettingView(APIView):
+    """
+    사용자 알림 설정 조회/수정 API 입니다.
+
+    GET  /api/accounts/notification-settings/
+    PATCH /api/accounts/notification-settings/
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get_object(self, user):
+        """
+        현재 로그인한 사용자의 알림 설정 객체를 가져옵니다.
+        없으면 기본값으로 생성합니다.
+        """
+        setting, _ = UserNotificationSetting.objects.get_or_create(user=user)
+        return setting
+
+    def get(self, request):
+        setting = self.get_object(request.user)
+        serializer = UserNotificationSettingSerializer(setting)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def patch(self, request):
+        setting = self.get_object(request.user)
+        serializer = UserNotificationSettingSerializer(
+            setting,
+            data=request.data,
+            partial=True
+        )
+
+        if serializer.is_valid():
+            serializer.save()
+            return Response(
+                {
+                    "success": True,
+                    "message": "알림 설정이 수정되었습니다.",
+                    "data": serializer.data,
+                },
+                status=status.HTTP_200_OK
+            )
+
+        return Response(
+            {
+                "success": False,
+                "errors": serializer.errors,
+            },
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+
+class LogoutView(APIView):
+    """
+    로그아웃 API 입니다.
+
+    중요:
+    - 백엔드에서는 refresh 토큰을 블랙리스트에 넣어 "우리 서비스 JWT"를 무효화합니다.
+    - Firebase 앱 로컬 로그아웃은 Flutter 에서 FirebaseAuth.instance.signOut() 으로 처리해야 합니다.
+
+    POST /api/accounts/logout/
+    body:
+    {
+        "refresh": "리프레시토큰문자열"
+    }
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        serializer = LogoutSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        refresh_token = serializer.validated_data["refresh"]
+
+        try:
+            token = RefreshToken(refresh_token)
+            token.blacklist()
+        except Exception as e:
+            return Response(
+                {"detail": f"로그아웃 처리 실패: {str(e)}"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        return Response(
+            {
+                "success": True,
+                "message": "백엔드 로그아웃이 완료되었습니다. Flutter 에서 Firebase 로그아웃도 함께 호출해주세요.",
+            },
+            status=status.HTTP_200_OK
+        )

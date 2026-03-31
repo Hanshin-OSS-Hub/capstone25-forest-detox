@@ -188,36 +188,6 @@ class UserPreferencesSerializer(serializers.ModelSerializer):
         )
         read_only_fields = ("id",)
 
-# ----------------------------------------------------
-# 6-1 홈 탭 응답 전용 Serializer
-# ----------------------------------------------------
-
-class HomeTodayChallengeSerializer(serializers.Serializer):
-    """
-    홈 화면에서 보여줄 '오늘의 단기 챌린지' 전용 Serializer 입니다.
-
-    DailyChallenge 모델 전체를 그대로 내려주는 대신,
-    홈 화면에 실제 필요한 값만 정리해서 보낼 때 사용합니다.
-    """
-
-    # 챌린지 고유 ID
-    id = serializers.IntegerField()
-
-    # 챌린지 제목
-    title = serializers.CharField()
-
-    # 챌린지 설명
-    description = serializers.CharField(allow_blank=True, allow_null=True)
-
-    # 챌린지 난이도
-    difficulty = serializers.CharField()
-
-    # 챌린지 상태
-    status = serializers.CharField()
-
-    # 보상 포인트
-    reward_points = serializers.IntegerField()
-
 
 class HomeSummaryResponseSerializer(serializers.Serializer):
     """
@@ -226,12 +196,6 @@ class HomeSummaryResponseSerializer(serializers.Serializer):
     홈 탭은 여러 모델의 데이터를 조합해서 보여주므로,
     일반 ModelSerializer 대신 Serializer 를 사용합니다.
     """
-
-    # 오늘 대표 감정
-    today_emotion = serializers.CharField(allow_null=True)
-
-    # 오늘 감정 입력 방식
-    emotion_input_method = serializers.CharField(allow_null=True)
 
     # 오늘 총 사용시간(분)
     total_usage_minutes = serializers.IntegerField()
@@ -251,6 +215,5 @@ class HomeSummaryResponseSerializer(serializers.Serializer):
     # 오늘의 팁
     daily_tip = serializers.CharField(allow_null=True)
 
-    # 오늘의 단기 챌린지 3개
-    today_challenges = HomeTodayChallengeSerializer(many=True)
-
+    # 가장 최근 챗봇 세션 ID
+    latest_chat_session_id = serializers.IntegerField(allow_null=True)

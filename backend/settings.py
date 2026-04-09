@@ -194,6 +194,6 @@ FIREBASE_SERVICE_ACCOUNT_PATH = os.getenv(
 
 # Django 개발 서버의 자동 재시작(reload) 때문에
 # Firebase 앱이 중복 초기화되지 않도록 방지합니다.
-#if not firebase_admin._apps:
-#  cred = credentials.Certificate(FIREBASE_SERVICE_ACCOUNT_PATH)
-#  firebase_admin.initialize_app(cred)
+if not firebase_admin._apps:
+    cred = credentials.Certificate(FIREBASE_SERVICE_ACCOUNT_PATH)
+    firebase_admin.initialize_app(cred)

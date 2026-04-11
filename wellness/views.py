@@ -1,5 +1,6 @@
 import logging
 from datetime import date, timedelta
+from django.utils import timezone
 
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.views import APIView
@@ -17,12 +18,18 @@ from .models import (
     UserPreferences,
     ChatSession,
     ChatMessage,
+    PointHistory,
+    UserLevel,
+    MonthlyChallenge,
 )
 
 from .serializers import (
     DailyChallengeSerializer,
     ChatSessionSerializer,
     HomeSummaryResponseSerializer,
+    MonthlyChallengeSerializer,
+    ChallengeSummaryResponseSerializer,
+    ChallengeActionResponseSerializer,
 )
 
 logger = logging.getLogger(__name__)
@@ -161,20 +168,80 @@ class ChatbotAPIView(APIView):
             )
 
 # ----------------------------------------------------
-# 2. 새로 추가하는 단기 챌린지 조회 API (인증 프리패스 장착 완료! 🚀)
+# 7-2 오늘의 일간 챌린지 조회 API
 # ----------------------------------------------------
-@api_view(['GET'])
-@permission_classes([AllowAny]) # 👈 이제 로그인 안 해도 에러 없이 볼 수 있어!
+@api_view(["GET"])
+@permission_classes([AllowAny])
 def get_daily_challenges(request):
-    # 1. DB에서 단기 챌린지 꺼내오기
-    challenges = DailyChallenge.objects.all()
-    
-    # 2. JSON 형태로 변환 (시리얼라이저 사용)
-    serializer = DailyChallengeSerializer(challenges, many=True)
-    
-    # 3. 프론트엔드로 전달
-    return Response(serializer.data)
+    """
+    [GET] /api/wellness/challenges/today/?user_id=1
 
+    챌린지 탭에서 오늘 날짜 기준의 일간 챌린지 목록을 조회합니다.
+    """
+    user_id = request.GET.get("user_id")
+
+    # user_id 가 없으면 어떤 사용자의 챌린지인지 알 수 없으므로 에러 반환
+    if not user_id:
+        return Response(
+            {"detail": "user_id가 필요합니다."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    # 사용자 존재 여부 확인
+    user = User.objects.filter(id=user_id).first()
+    if not user:
+        return Response(
+            {"detail": "해당 사용자를 찾을 수 없습니다."},
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+    # 오늘 날짜 기준의 일간 챌린지만 조회
+    challenges = DailyChallenge.objects.filter(
+        user=user,
+        challenge_date=date.today()
+    ).order_by("id")
+
+    serializer = DailyChallengeSerializer(challenges, many=True)
+    return Response(serializer.data, status=status.HTTP_200_OK)
+
+# ----------------------------------------------------
+# 7-3 현재 월간 챌린지 조회 API
+# ----------------------------------------------------
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def get_monthly_challenges(request):
+    """
+    [GET] /api/wellness/challenges/monthly/?user_id=1
+
+    현재 날짜가 시작일과 종료일 사이에 들어가는
+    월간 챌린지 목록을 조회합니다.
+    """
+    user_id = request.GET.get("user_id")
+
+    if not user_id:
+        return Response(
+            {"detail": "user_id가 필요합니다."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    user = User.objects.filter(id=user_id).first()
+    if not user:
+        return Response(
+            {"detail": "해당 사용자를 찾을 수 없습니다."},
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+    today = date.today()
+
+    # 오늘 날짜가 start_date ~ end_date 사이에 들어가는 월간 챌린지 조회
+    challenges = MonthlyChallenge.objects.filter(
+        user=user,
+        start_date__lte=today,
+        end_date__gte=today
+    ).order_by("id")
+
+    serializer = MonthlyChallengeSerializer(challenges, many=True)
+    return Response(serializer.data, status=status.HTTP_200_OK)
 # ----------------------------------------------------
 # 3. 홈 탭 보조 함수 - 연속 달성일 계산
 # ----------------------------------------------------
@@ -262,6 +329,312 @@ def get_or_create_today_tip(user, emotion_label=None):
         content=content,
     )
     return tip
+
+# ----------------------------------------------------
+# 7-4 레벨 계산 보조 함수
+# ----------------------------------------------------
+def get_total_required_experience_for_level(level):
+    """
+    특정 레벨에 도달하기 위해 필요한 '누적 총 경험치'를 반환합니다.
+
+    규칙:
+    - 레벨 1: 0
+    - 레벨 2: 20
+    - 레벨 3: 60
+    - 레벨 4: 120
+    - 레벨 5: 200
+    - 레벨 6 이상: 이후부터는 레벨당 80씩 증가
+
+    이 함수는 '현재 레벨'이 아니라
+    '그 레벨에 도달하기 위해 필요한 총 누적 경험치'를 반환합니다.
+    """
+    if level <= 1:
+        return 0
+    elif level == 2:
+        return 20
+    elif level == 3:
+        return 60
+    elif level == 4:
+        return 120
+    elif level == 5:
+        return 200
+    else:
+        # 레벨 6부터는 레벨당 80씩 추가 증가
+        return 200 + (level - 5) * 80
+
+
+def apply_points_and_level_up(user, awarded_points, reason, daily_challenge=None, monthly_challenge=None):
+    """
+    포인트 적립과 레벨 계산을 한 번에 처리하는 함수입니다.
+
+    이 함수는:
+    1. PointHistory 생성
+    2. UserLevel 생성 또는 조회
+    3. 포인트 누적
+    4. 레벨업 여부 판정
+    을 담당합니다.
+    """
+    # 포인트 이력 저장
+    PointHistory.objects.create(
+        user=user,
+        point_amount=awarded_points,
+        reason=reason,
+        daily_challenge=daily_challenge,
+        monthly_challenge=monthly_challenge,
+    )
+
+    # 사용자 레벨 정보가 없으면 새로 생성
+    user_level, _ = UserLevel.objects.get_or_create(
+        user=user,
+        defaults={
+            "level": 1,
+            "experience": 0,
+        }
+    )
+
+    # 기존 레벨 기억
+    old_level = user_level.level
+
+    # 포인트 누적
+    user_level.experience += awarded_points
+
+    # 레벨업 여부
+    leveled_up = False
+
+    # 누적 경험치를 기준으로 레벨업 판정
+    while user_level.experience >= get_total_required_experience_for_level(user_level.level + 1):
+        user_level.level += 1
+        user_level.last_level_up_at = timezone.now()
+        leveled_up = True
+
+    user_level.save()
+
+    return {
+        "leveled_up": leveled_up,
+        "current_level": user_level.level,
+        "current_experience": user_level.experience,
+        "old_level": old_level,
+    }
+
+# ----------------------------------------------------
+# 7-1 챌린지 탭 상단 요약 조회 API
+# ----------------------------------------------------
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def get_challenge_summary(request):
+    """
+    [GET] /api/wellness/challenges/summary/?user_id=1
+
+    챌린지 탭 상단에서 필요한 요약 정보를 반환합니다.
+    - 레벨
+    - 포인트
+    - 다음 레벨까지 남은 포인트
+    - 오늘 완료한 일간 챌린지 수
+    - 현재 월간 챌린지 완료 수
+    """
+    user_id = request.GET.get("user_id")
+
+    if not user_id:
+        return Response(
+            {"detail": "user_id가 필요합니다."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    user = User.objects.filter(id=user_id).first()
+    if not user:
+        return Response(
+            {"detail": "해당 사용자를 찾을 수 없습니다."},
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+    today = date.today()
+
+    # 레벨 정보가 없으면 기본 생성
+    user_level, _ = UserLevel.objects.get_or_create(
+        user=user,
+        defaults={
+            "level": 1,
+            "experience": 0,
+        }
+    )
+
+    # 오늘 완료한 일간 챌린지 수
+    completed_daily_count = DailyChallenge.objects.filter(
+        user=user,
+        challenge_date=today,
+        status=DailyChallenge.STATUS_COMPLETED
+    ).count()
+
+    # 현재 진행 중인 월간 챌린지 중 완료된 개수
+    completed_monthly_count = MonthlyChallenge.objects.filter(
+        user=user,
+        start_date__lte=today,
+        end_date__gte=today,
+        status=MonthlyChallenge.STATUS_COMPLETED
+    ).count()
+
+    # 다음 레벨에 필요한 총 경험치
+    next_level_required_total = get_total_required_experience_for_level(user_level.level + 1)
+
+    # 현재 경험치 기준으로 남은 포인트 계산
+    remaining_points = max(next_level_required_total - user_level.experience, 0)
+
+    response_data = {
+        "level": user_level.level,
+        "experience": user_level.experience,
+        "remaining_points_to_next_level": remaining_points,
+        "completed_daily_count": completed_daily_count,
+        "completed_monthly_count": completed_monthly_count,
+    }
+
+    serializer = ChallengeSummaryResponseSerializer(data=response_data)
+    serializer.is_valid(raise_exception=True)
+
+    return Response(serializer.validated_data, status=status.HTTP_200_OK)
+
+
+# ----------------------------------------------------
+# 7-5 일간 챌린지 완료 처리 API
+# ----------------------------------------------------
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def complete_daily_challenge(request, challenge_id):
+    """
+    [POST] /api/wellness/challenges/daily/<challenge_id>/complete/
+
+    일간 챌린지를 완료 처리합니다.
+    """
+    user_id = request.data.get("user_id")
+
+    if not user_id:
+        return Response(
+            {"detail": "user_id가 필요합니다."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    user = User.objects.filter(id=user_id).first()
+    if not user:
+        return Response(
+            {"detail": "해당 사용자를 찾을 수 없습니다."},
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+    challenge = DailyChallenge.objects.filter(id=challenge_id, user=user).first()
+    if not challenge:
+        return Response(
+            {"detail": "해당 일간 챌린지를 찾을 수 없습니다."},
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+    # 이미 완료된 챌린지면 중복 완료 방지
+    if challenge.status == DailyChallenge.STATUS_COMPLETED:
+        return Response(
+            {
+                "success": False,
+                "message": "이미 완료된 챌린지입니다.",
+            },
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    # 상태 변경
+    challenge.status = DailyChallenge.STATUS_COMPLETED
+    challenge.completed_at = timezone.now()
+    challenge.save()
+
+    # 포인트 적립 및 레벨업 계산
+    level_result = apply_points_and_level_up(
+        user=user,
+        awarded_points=challenge.reward_points,
+        reason=f"일간 챌린지 완료: {challenge.title}",
+        daily_challenge=challenge,
+    )
+
+    response_data = {
+        "success": True,
+        "challenge_id": challenge.id,
+        "awarded_points": challenge.reward_points,
+        "current_level": level_result["current_level"],
+        "current_experience": level_result["current_experience"],
+        "leveled_up": level_result["leveled_up"],
+        "message": "일간 챌린지를 완료했습니다.",
+    }
+
+    serializer = ChallengeActionResponseSerializer(data=response_data)
+    serializer.is_valid(raise_exception=True)
+
+    return Response(serializer.validated_data, status=status.HTTP_200_OK)
+
+# ----------------------------------------------------
+# 7-6 월간 챌린지 완료 처리 API
+# ----------------------------------------------------
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def complete_monthly_challenge(request, challenge_id):
+    """
+    [POST] /api/wellness/challenges/monthly/<challenge_id>/complete/
+
+    월간 챌린지를 완료 처리합니다.
+    """
+    user_id = request.data.get("user_id")
+
+    if not user_id:
+        return Response(
+            {"detail": "user_id가 필요합니다."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    user = User.objects.filter(id=user_id).first()
+    if not user:
+        return Response(
+            {"detail": "해당 사용자를 찾을 수 없습니다."},
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+    challenge = MonthlyChallenge.objects.filter(id=challenge_id, user=user).first()
+    if not challenge:
+        return Response(
+            {"detail": "해당 월간 챌린지를 찾을 수 없습니다."},
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+    # 이미 완료된 챌린지면 중복 완료 방지
+    if challenge.status == MonthlyChallenge.STATUS_COMPLETED:
+        return Response(
+            {
+                "success": False,
+                "message": "이미 완료된 챌린지입니다.",
+            },
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    # 상태 변경
+    challenge.status = MonthlyChallenge.STATUS_COMPLETED
+    challenge.completed_at = timezone.now()
+    challenge.save()
+
+    # 포인트 적립 및 레벨업 계산
+    level_result = apply_points_and_level_up(
+        user=user,
+        awarded_points=challenge.reward_points,
+        reason=f"월간 챌린지 완료: {challenge.title}",
+        monthly_challenge=challenge,
+    )
+
+    response_data = {
+        "success": True,
+        "challenge_id": challenge.id,
+        "awarded_points": challenge.reward_points,
+        "current_level": level_result["current_level"],
+        "current_experience": level_result["current_experience"],
+        "leveled_up": level_result["leveled_up"],
+        "message": "월간 챌린지를 완료했습니다.",
+    }
+
+    serializer = ChallengeActionResponseSerializer(data=response_data)
+    serializer.is_valid(raise_exception=True)
+
+    return Response(serializer.validated_data, status=status.HTTP_200_OK)
+
 
 # ----------------------------------------------------
 # 6-2 홈 탭 보조 함수 - 연속 달성일 계산

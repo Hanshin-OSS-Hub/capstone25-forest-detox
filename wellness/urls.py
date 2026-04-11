@@ -6,6 +6,10 @@ from .views import (
     get_home_summary,
     create_emotion_log,
     get_latest_chat_session,
+    get_monthly_challenges,
+    get_challenge_summary,
+    complete_daily_challenge,
+    complete_monthly_challenge,
 )
 
 urlpatterns = [
@@ -23,4 +27,17 @@ urlpatterns = [
 
     # 최근 챗봇 대화 세션 조회 API
     path("chat/latest/", get_latest_chat_session, name="latest-chat-session"),
+
+    # 챌린지 탭 상단 요약 API
+    path("challenges/summary/", get_challenge_summary, name="challenge-summary"),
+
+    # 월간 챌린지 조회 API
+    path("challenges/monthly/", get_monthly_challenges, name="monthly-challenges"),
+
+    # 일간 챌린지 완료 처리 API
+    path("challenges/daily/<int:challenge_id>/complete/", complete_daily_challenge, name="complete-daily-challenge"),
+
+    # 월간 챌린지 완료 처리 API
+    path("challenges/monthly/<int:challenge_id>/complete/", complete_monthly_challenge,
+         name="complete-monthly-challenge"),
 ]

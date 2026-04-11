@@ -217,3 +217,61 @@ class HomeSummaryResponseSerializer(serializers.Serializer):
 
     # 가장 최근 챗봇 세션 ID
     latest_chat_session_id = serializers.IntegerField(allow_null=True)
+
+
+# ----------------------------------------------------
+# 7-1 챌린지 탭 응답 전용 Serializer
+# ----------------------------------------------------
+
+class ChallengeSummaryResponseSerializer(serializers.Serializer):
+    """
+    챌린지 탭 상단 요약 응답용 Serializer 입니다.
+
+    이 Serializer 는 챌린지 탭 상단에 보여줄
+    포인트, 레벨, 완료 개수 같은 요약 정보를 담습니다.
+    """
+
+    # 현재 사용자 레벨
+    level = serializers.IntegerField()
+
+    # 현재 누적 포인트
+    experience = serializers.IntegerField()
+
+    # 다음 레벨까지 남은 포인트
+    remaining_points_to_next_level = serializers.IntegerField()
+
+    # 오늘 완료한 일간 챌린지 개수
+    completed_daily_count = serializers.IntegerField()
+
+    # 현재 진행 중인 월간 챌린지 중 완료한 개수
+    completed_monthly_count = serializers.IntegerField()
+
+
+class ChallengeActionResponseSerializer(serializers.Serializer):
+    """
+    챌린지 완료 처리 응답용 Serializer 입니다.
+
+    챌린지를 완료한 뒤,
+    프론트에서 바로 반영할 수 있도록 필요한 값만 응답합니다.
+    """
+
+    # 성공 여부
+    success = serializers.BooleanField()
+
+    # 완료 처리된 챌린지 ID
+    challenge_id = serializers.IntegerField()
+
+    # 적립된 포인트
+    awarded_points = serializers.IntegerField()
+
+    # 현재 레벨
+    current_level = serializers.IntegerField()
+
+    # 현재 누적 포인트
+    current_experience = serializers.IntegerField()
+
+    # 레벨업 여부
+    leveled_up = serializers.BooleanField()
+
+    # 응답 메시지
+    message = serializers.CharField()

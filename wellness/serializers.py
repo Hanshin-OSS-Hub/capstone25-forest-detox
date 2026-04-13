@@ -275,3 +275,30 @@ class ChallengeActionResponseSerializer(serializers.Serializer):
 
     # 응답 메시지
     message = serializers.CharField()
+
+# ----------------------------------------------------
+# 7-8 챌린지 생성 응답 전용 Serializer
+# ----------------------------------------------------
+
+class ChallengeGenerationResponseSerializer(serializers.Serializer):
+    """
+    난이도 기반 챌린지 생성 API 응답용 Serializer 입니다.
+
+    챌린지를 생성한 뒤,
+    프론트엔드에서 바로 결과를 확인할 수 있도록
+    생성 개수와 생성된 챌린지 ID 목록을 함께 반환합니다.
+    """
+
+    # 생성 성공 여부
+    success = serializers.BooleanField()
+
+    # 생성된 챌린지 개수
+    created_count = serializers.IntegerField()
+
+    # 생성된 챌린지 ID 목록
+    created_ids = serializers.ListField(
+        child=serializers.IntegerField()
+    )
+
+    # 응답 메시지
+    message = serializers.CharField()

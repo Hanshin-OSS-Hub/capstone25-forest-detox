@@ -1,3 +1,5 @@
+import random
+import calendar
 import logging
 from datetime import date, timedelta
 from django.utils import timezone
@@ -30,6 +32,7 @@ from .serializers import (
     MonthlyChallengeSerializer,
     ChallengeSummaryResponseSerializer,
     ChallengeActionResponseSerializer,
+    ChallengeGenerationResponseSerializer,
 )
 
 logger = logging.getLogger(__name__)
@@ -417,6 +420,202 @@ def apply_points_and_level_up(user, awarded_points, reason, daily_challenge=None
     }
 
 # ----------------------------------------------------
+# 7-8 난이도 기반 챌린지 생성 보조 함수
+# ----------------------------------------------------
+def get_allowed_difficulties(preferred_difficulty):
+    """
+    사용자가 설정한 선호 난이도에 따라
+    생성 가능한 난이도 목록을 반환합니다.
+
+    규칙:
+    - beginner      -> beginner만 허용
+    - intermediate  -> beginner, intermediate 허용
+    - advanced      -> beginner, intermediate, advanced 허용
+    """
+    if preferred_difficulty == DailyChallenge.DIFFICULTY_BEGINNER:
+        return [DailyChallenge.DIFFICULTY_BEGINNER]
+
+    if preferred_difficulty == DailyChallenge.DIFFICULTY_INTERMEDIATE:
+        return [
+            DailyChallenge.DIFFICULTY_BEGINNER,
+            DailyChallenge.DIFFICULTY_INTERMEDIATE,
+        ]
+
+    return [
+        DailyChallenge.DIFFICULTY_BEGINNER,
+        DailyChallenge.DIFFICULTY_INTERMEDIATE,
+        DailyChallenge.DIFFICULTY_ADVANCED,
+    ]
+
+
+def build_daily_difficulty_mix(preferred_difficulty):
+    """
+    일간 챌린지 3개의 난이도 조합을 생성합니다.
+
+    기획 의도:
+    - 중급이라고 해서 중급 3개를 고정하지 않음
+    - 고급이라고 해서 고급 3개를 고정하지 않음
+    - 설정한 난이도 이하 범위 안에서만 랜덤하게 섞음
+    """
+    allowed = get_allowed_difficulties(preferred_difficulty)
+
+    # 초급은 선택지가 하나뿐이므로 3개 모두 초급
+    if len(allowed) == 1:
+        return [allowed[0], allowed[0], allowed[0]]
+
+    # 중급이면 초급/중급 조합
+    if preferred_difficulty == DailyChallenge.DIFFICULTY_INTERMEDIATE:
+        patterns = [
+            [
+                DailyChallenge.DIFFICULTY_BEGINNER,
+                DailyChallenge.DIFFICULTY_BEGINNER,
+                DailyChallenge.DIFFICULTY_INTERMEDIATE,
+            ],
+            [
+                DailyChallenge.DIFFICULTY_BEGINNER,
+                DailyChallenge.DIFFICULTY_INTERMEDIATE,
+                DailyChallenge.DIFFICULTY_INTERMEDIATE,
+            ],
+        ]
+        return random.choice(patterns)
+
+    # 고급이면 초급/중급/고급 범위 안에서 조합
+    patterns = [
+        [
+            DailyChallenge.DIFFICULTY_BEGINNER,
+            DailyChallenge.DIFFICULTY_INTERMEDIATE,
+            DailyChallenge.DIFFICULTY_ADVANCED,
+        ],
+        [
+            DailyChallenge.DIFFICULTY_BEGINNER,
+            DailyChallenge.DIFFICULTY_ADVANCED,
+            DailyChallenge.DIFFICULTY_ADVANCED,
+        ],
+        [
+            DailyChallenge.DIFFICULTY_INTERMEDIATE,
+            DailyChallenge.DIFFICULTY_INTERMEDIATE,
+            DailyChallenge.DIFFICULTY_ADVANCED,
+        ],
+        [
+            DailyChallenge.DIFFICULTY_BEGINNER,
+            DailyChallenge.DIFFICULTY_INTERMEDIATE,
+            DailyChallenge.DIFFICULTY_INTERMEDIATE,
+        ],
+    ]
+    return random.choice(patterns)
+
+
+def get_reward_points_by_difficulty(difficulty, challenge_type="daily"):
+    """
+    난이도와 챌린지 종류에 따라 보상 포인트를 반환합니다.
+
+    지금 단계에서는 단순하고 직관적인 규칙으로 갑니다.
+    """
+    if challenge_type == "daily":
+        if difficulty == DailyChallenge.DIFFICULTY_BEGINNER:
+            return 10
+        if difficulty == DailyChallenge.DIFFICULTY_INTERMEDIATE:
+            return 20
+        return 30
+
+    # monthly
+    if difficulty == MonthlyChallenge.DIFFICULTY_BEGINNER:
+        return 50
+    if difficulty == MonthlyChallenge.DIFFICULTY_INTERMEDIATE:
+        return 70
+    return 90
+
+def get_daily_challenge_templates():
+    """
+    일간 챌린지 생성용 기본 템플릿 목록입니다.
+
+    나중에 AI 생성 로직으로 대체할 수 있도록
+    지금은 난이도별 수동 템플릿으로 준비합니다.
+    """
+    return {
+        DailyChallenge.DIFFICULTY_BEGINNER: [
+            {
+                "title": "오늘 유튜브 30분 이하로 사용하기",
+                "description": "영상 시청 시간을 조금만 줄여보는 초급 목표입니다.",
+                "target_app_name": "YouTube",
+                "target_minutes": 30,
+            },
+            {
+                "title": "SNS 대신 10분 산책하기",
+                "description": "짧은 산책으로 디지털 디톡스를 실천해보세요.",
+                "target_app_name": None,
+                "target_minutes": None,
+            },
+        ],
+        DailyChallenge.DIFFICULTY_INTERMEDIATE: [
+            {
+                "title": "잠들기 전 1시간 스마트폰 사용하지 않기",
+                "description": "수면 전 휴대폰 사용을 줄이는 중급 목표입니다.",
+                "target_app_name": None,
+                "target_minutes": 60,
+            },
+            {
+                "title": "오늘 인스타그램 20분 이하로 사용하기",
+                "description": "SNS 사용 시간을 의식적으로 제한해보세요.",
+                "target_app_name": "Instagram",
+                "target_minutes": 20,
+            },
+        ],
+        DailyChallenge.DIFFICULTY_ADVANCED: [
+            {
+                "title": "저녁 8시 이후 스마트폰 사용 금지",
+                "description": "강도가 높은 고급 디지털 디톡스 목표입니다.",
+                "target_app_name": None,
+                "target_minutes": 0,
+            },
+            {
+                "title": "오늘 집중 시간 2시간 동안 휴대폰 멀리 두기",
+                "description": "강한 집중 루틴을 만드는 고급 목표입니다.",
+                "target_app_name": None,
+                "target_minutes": 0,
+            },
+        ],
+    }
+
+
+def get_monthly_challenge_templates():
+    """
+    월간 챌린지 생성용 기본 템플릿 목록입니다.
+    """
+    return {
+        MonthlyChallenge.DIFFICULTY_BEGINNER: [
+            {
+                "title": "이번 달 평균 스크린타임 20분 줄이기",
+                "description": "하루 평균 사용 시간을 조금씩 줄여보는 목표입니다.",
+            },
+            {
+                "title": "이번 달 주 2회 디지털 디톡스 실천하기",
+                "description": "가벼운 실천 습관을 만드는 월간 목표입니다.",
+            },
+        ],
+        MonthlyChallenge.DIFFICULTY_INTERMEDIATE: [
+            {
+                "title": "이번 달 평균 스크린타임 40분 줄이기",
+                "description": "보다 적극적으로 사용 시간을 줄이는 목표입니다.",
+            },
+            {
+                "title": "이번 달 주 3회 밤 시간 휴대폰 사용 줄이기",
+                "description": "수면 전 사용 습관을 개선하는 목표입니다.",
+            },
+        ],
+        MonthlyChallenge.DIFFICULTY_ADVANCED: [
+            {
+                "title": "이번 달 평균 스크린타임 1시간 줄이기",
+                "description": "강도 높은 디지털 디톡스 목표입니다.",
+            },
+            {
+                "title": "이번 달 평일 저녁 루틴에서 스마트폰 제외하기",
+                "description": "저녁 루틴 전체를 바꾸는 고급 목표입니다.",
+            },
+        ],
+    }
+
+# ----------------------------------------------------
 # 7-1 챌린지 탭 상단 요약 조회 API
 # ----------------------------------------------------
 @api_view(["GET"])
@@ -635,6 +834,189 @@ def complete_monthly_challenge(request, challenge_id):
 
     return Response(serializer.validated_data, status=status.HTTP_200_OK)
 
+# ----------------------------------------------------
+# 7-8 일간 챌린지 생성 API
+# ----------------------------------------------------
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def generate_daily_challenges(request):
+    """
+    [POST] /api/wellness/challenges/daily/generate/
+
+    사용자의 선호 난이도에 따라
+    오늘의 일간 챌린지 3개를 생성합니다.
+
+    규칙:
+    - 설정 난이도 이하 범위에서만 생성
+    - 오늘 이미 생성된 챌린지가 있으면 중복 생성하지 않음
+    """
+    user_id = request.data.get("user_id")
+
+    if not user_id:
+        return Response(
+            {"detail": "user_id가 필요합니다."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    user = User.objects.filter(id=user_id).first()
+    if not user:
+        return Response(
+            {"detail": "해당 사용자를 찾을 수 없습니다."},
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+    today = date.today()
+
+    # 오늘 이미 생성된 일간 챌린지가 있으면 그대로 막습니다.
+    existing_count = DailyChallenge.objects.filter(
+        user=user,
+        challenge_date=today
+    ).count()
+
+    if existing_count > 0:
+        return Response(
+            {
+                "success": False,
+                "created_count": 0,
+                "created_ids": [],
+                "message": "오늘의 일간 챌린지가 이미 생성되어 있습니다."
+            },
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    # 사용자 설정 조회
+    preferences = UserPreferences.objects.filter(user=user).first()
+    preferred_difficulty = (
+        preferences.preferred_challenge_difficulty
+        if preferences else DailyChallenge.DIFFICULTY_BEGINNER
+    )
+
+    difficulty_mix = build_daily_difficulty_mix(preferred_difficulty)
+    templates = get_daily_challenge_templates()
+
+    created_ids = []
+
+    for difficulty in difficulty_mix:
+        template = random.choice(templates[difficulty])
+
+        challenge = DailyChallenge.objects.create(
+            user=user,
+            title=template["title"],
+            description=template["description"],
+            difficulty=difficulty,
+            status=DailyChallenge.STATUS_PENDING,
+            reward_points=get_reward_points_by_difficulty(difficulty, "daily"),
+            generated_by=DailyChallenge.GENERATED_BY_AI,
+            target_app_name=template["target_app_name"],
+            target_minutes=template["target_minutes"],
+        )
+        created_ids.append(challenge.id)
+
+    response_data = {
+        "success": True,
+        "created_count": len(created_ids),
+        "created_ids": created_ids,
+        "message": "오늘의 일간 챌린지를 생성했습니다."
+    }
+
+    serializer = ChallengeGenerationResponseSerializer(data=response_data)
+    serializer.is_valid(raise_exception=True)
+
+    return Response(serializer.validated_data, status=status.HTTP_201_CREATED)
+
+# ----------------------------------------------------
+# 7-8 월간 챌린지 생성 API
+# ----------------------------------------------------
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def generate_monthly_challenges(request):
+    """
+    [POST] /api/wellness/challenges/monthly/generate/
+
+    사용자의 선호 난이도에 따라
+    현재 달의 월간 챌린지 2개를 생성합니다.
+
+    규칙:
+    - 설정 난이도 이하 범위에서만 생성
+    - 현재 달에 이미 생성된 월간 챌린지가 있으면 중복 생성하지 않음
+    """
+    user_id = request.data.get("user_id")
+
+    if not user_id:
+        return Response(
+            {"detail": "user_id가 필요합니다."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    user = User.objects.filter(id=user_id).first()
+    if not user:
+        return Response(
+            {"detail": "해당 사용자를 찾을 수 없습니다."},
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+    today = date.today()
+    start_of_month = date(today.year, today.month, 1)
+    end_of_month = date(today.year, today.month, calendar.monthrange(today.year, today.month)[1])
+
+    # 현재 달에 이미 생성된 월간 챌린지가 있으면 중복 생성하지 않음
+    existing_count = MonthlyChallenge.objects.filter(
+        user=user,
+        start_date=start_of_month,
+        end_date=end_of_month
+    ).count()
+
+    if existing_count > 0:
+        return Response(
+            {
+                "success": False,
+                "created_count": 0,
+                "created_ids": [],
+                "message": "이번 달 월간 챌린지가 이미 생성되어 있습니다."
+            },
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    preferences = UserPreferences.objects.filter(user=user).first()
+    preferred_difficulty = (
+        preferences.preferred_challenge_difficulty
+        if preferences else MonthlyChallenge.DIFFICULTY_BEGINNER
+    )
+
+    allowed = get_allowed_difficulties(preferred_difficulty)
+    templates = get_monthly_challenge_templates()
+
+    created_ids = []
+
+    # 월간은 2개만 생성
+    for _ in range(2):
+        difficulty = random.choice(allowed)
+        template = random.choice(templates[difficulty])
+
+        challenge = MonthlyChallenge.objects.create(
+            user=user,
+            title=template["title"],
+            description=template["description"],
+            difficulty=difficulty,
+            status=MonthlyChallenge.STATUS_PENDING,
+            reward_points=get_reward_points_by_difficulty(difficulty, "monthly"),
+            generated_by=MonthlyChallenge.GENERATED_BY_AI,
+            start_date=start_of_month,
+            end_date=end_of_month,
+        )
+        created_ids.append(challenge.id)
+
+    response_data = {
+        "success": True,
+        "created_count": len(created_ids),
+        "created_ids": created_ids,
+        "message": "이번 달 월간 챌린지를 생성했습니다."
+    }
+
+    serializer = ChallengeGenerationResponseSerializer(data=response_data)
+    serializer.is_valid(raise_exception=True)
+
+    return Response(serializer.validated_data, status=status.HTTP_201_CREATED)
 
 # ----------------------------------------------------
 # 6-2 홈 탭 보조 함수 - 연속 달성일 계산

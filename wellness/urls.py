@@ -10,6 +10,8 @@ from .views import (
     get_challenge_summary,
     complete_daily_challenge,
     complete_monthly_challenge,
+    generate_daily_challenges,
+    generate_monthly_challenges,
 )
 
 urlpatterns = [
@@ -40,4 +42,10 @@ urlpatterns = [
     # 월간 챌린지 완료 처리 API
     path("challenges/monthly/<int:challenge_id>/complete/", complete_monthly_challenge,
          name="complete-monthly-challenge"),
+
+    # 일간 챌린지 생성 API
+    path("challenges/daily/generate/", generate_daily_challenges, name="generate-daily-challenges"),
+
+    # 월간 챌린지 생성 API
+    path("challenges/monthly/generate/", generate_monthly_challenges, name="generate-monthly-challenges"),
 ]

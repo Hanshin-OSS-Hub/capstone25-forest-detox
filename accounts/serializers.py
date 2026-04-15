@@ -200,3 +200,54 @@ class LogoutSerializer(serializers.Serializer):
     - refresh 토큰을 블랙리스트에 넣어야 재발급을 막을 수 있기 때문입니다.
     """
     refresh = serializers.CharField()
+
+
+# ----------------------------------------------------
+# 9-1 설정 탭 응답 전용 Serializer
+# ----------------------------------------------------
+
+class NotificationSettingSerializer(serializers.Serializer):
+    """
+    설정 탭에서 사용하는 알림 설정 응답/수정용 Serializer 입니다.
+    """
+
+    # 푸시 알림 on/off
+    push_notification_enabled = serializers.BooleanField()
+
+    # 사용시간 알림 on/off
+    usage_alert_enabled = serializers.BooleanField()
+
+
+class SettingsSummaryResponseSerializer(serializers.Serializer):
+    """
+    설정 탭 전체 요약 응답용 Serializer 입니다.
+
+    설정 탭 화면에 필요한 정보를 한 번에 내려줄 때 사용합니다.
+    """
+
+    # 사용자 ID
+    user_id = serializers.IntegerField()
+
+    # 사용자명
+    username = serializers.CharField()
+
+    # 이메일
+    email = serializers.CharField()
+
+    # 로그인 제공자
+    provider = serializers.CharField()
+
+    # 푸시 알림 on/off
+    push_notification_enabled = serializers.BooleanField()
+
+    # 사용시간 알림 on/off
+    usage_alert_enabled = serializers.BooleanField()
+
+    # 앱 이름
+    app_name = serializers.CharField()
+
+    # 앱 버전
+    app_version = serializers.CharField()
+
+    # 앱 설명
+    app_description = serializers.CharField()

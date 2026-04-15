@@ -26,6 +26,8 @@ from .serializers import (
     FirebaseLinkSerializer,
     LogoutSerializer,
     UserNotificationSettingSerializer,
+    SettingsSummaryResponseSerializer,
+    NotificationSettingSerializer,
 )
 
 # 알림 설정 모델을 import 합니다.
@@ -331,6 +333,113 @@ class MeView(APIView):
         serializer = MeSerializer(request.user)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
+# ----------------------------------------------------
+# 9-2 설정 탭 전체 요약 조회 API
+# ----------------------------------------------------
+class SettingsSummaryView(APIView):
+    """
+    [GET] /api/accounts/settings/
+
+    설정 탭 화면에 필요한 전체 정보를 한 번에 반환하는 API 입니다.
+
+    응답 내용:
+    - 사용자 기본 정보
+    - 로그인 제공자
+    - 알림 설정
+    - 앱 정보
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+
+        # 사용자 알림 설정이 없으면 기본값으로 생성합니다.
+        notification_setting, _ = UserNotificationSetting.objects.get_or_create(
+            user=user,
+            defaults={
+                "push_notification_enabled": True,
+                "usage_alert_enabled": True,
+                "night_reminder_enabled": False,
+            }
+        )
+
+        response_data = {
+            "user_id": user.id,
+            "username": user.username,
+            "email": user.email,
+            "provider": user.provider,
+            "push_notification_enabled": notification_setting.push_notification_enabled,
+            "usage_alert_enabled": notification_setting.usage_alert_enabled,
+
+            # 앱 정보는 지금 단계에서는 정적 값으로 내려줍니다.
+            "app_name": "Forest Detox",
+            "app_version": "0.1.0",
+            "app_description": "AI 기반 디지털 디톡스 코치 애플리케이션",
+        }
+
+        serializer = SettingsSummaryResponseSerializer(data=response_data)
+        serializer.is_valid(raise_exception=True)
+
+        return Response(serializer.validated_data, status=status.HTTP_200_OK)
+
+# ----------------------------------------------------
+# 9-3 알림 설정 수정 API
+# ----------------------------------------------------
+class NotificationSettingUpdateView(APIView):
+    """
+    [PATCH] /api/accounts/settings/notifications/
+
+    설정 탭에서 알림 스위치를 on/off 했을 때
+    실제 DB 값을 수정하는 API 입니다.
+
+    요청 예시:
+    {
+        "push_notification_enabled": true,
+        "usage_alert_enabled": false
+    }
+    """
+    permission_classes = [IsAuthenticated]
+
+    def patch(self, request):
+        user = request.user
+
+        # 사용자 알림 설정이 없으면 기본값으로 생성합니다.
+        notification_setting, _ = UserNotificationSetting.objects.get_or_create(
+            user=user,
+            defaults={
+                "push_notification_enabled": True,
+                "usage_alert_enabled": True,
+                "night_reminder_enabled": False,
+            }
+        )
+
+        # 요청 데이터를 serializer로 검증
+        serializer = NotificationSettingSerializer(
+            data=request.data,
+            partial=True
+        )
+        serializer.is_valid(raise_exception=True)
+
+        validated_data = serializer.validated_data
+
+        # 들어온 필드만 수정합니다.
+        if "push_notification_enabled" in validated_data:
+            notification_setting.push_notification_enabled = validated_data["push_notification_enabled"]
+
+        if "usage_alert_enabled" in validated_data:
+            notification_setting.usage_alert_enabled = validated_data["usage_alert_enabled"]
+
+        notification_setting.save()
+
+        response_data = {
+            "push_notification_enabled": notification_setting.push_notification_enabled,
+            "usage_alert_enabled": notification_setting.usage_alert_enabled,
+        }
+
+        response_serializer = NotificationSettingSerializer(data=response_data)
+        response_serializer.is_valid(raise_exception=True)
+
+        return Response(response_serializer.validated_data, status=status.HTTP_200_OK)
 
 class NotificationSettingView(APIView):
     """

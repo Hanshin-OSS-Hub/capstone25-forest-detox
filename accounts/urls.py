@@ -15,6 +15,8 @@ from .views import (
     FirebaseLinkView,
     LogoutView,
     NotificationSettingView,
+    SettingsSummaryView,
+    NotificationSettingUpdateView,
 )
 
 urlpatterns = [
@@ -41,4 +43,10 @@ urlpatterns = [
 
     # 알림 설정 조회 / 수정
     path("notification-settings/", NotificationSettingView.as_view(), name="notification_settings"),
+
+    # 설정 탭 전체 요약 조회
+    path("settings/", SettingsSummaryView.as_view(), name="settings-summary"),
+
+    # 설정 탭 알림 설정 수정
+    path("settings/notifications/", NotificationSettingUpdateView.as_view(), name="settings-notifications-update"),
 ]

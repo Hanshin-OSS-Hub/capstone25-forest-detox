@@ -251,3 +251,14 @@ class SettingsSummaryResponseSerializer(serializers.Serializer):
 
     # 앱 설명
     app_description = serializers.CharField()
+
+class DeviceTokenSerializer(serializers.Serializer):
+    """
+    FCM 디바이스 토큰 등록/수정용 Serializer 입니다.
+    """
+
+    # FCM 토큰
+    token = serializers.CharField()
+
+    # 플랫폼 정보
+    platform = serializers.CharField(required=False, allow_blank=True)

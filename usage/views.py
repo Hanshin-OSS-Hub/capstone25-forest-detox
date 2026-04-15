@@ -6,12 +6,16 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework import status
 
+from django.db import transaction
+from django.utils import timezone
 from accounts.models import User
 from wellness.models import EmotionLog, DailyChallenge
-from .models import DailyUsageSummary, DailyAppUsageTop
+from .models import AppUsage, AppCategory, DailyUsageSummary, DailyAppUsageTop
 from .serializers import (
     RecordDetailResponseSerializer,
     CalendarMonthResponseSerializer,
+    AppUsageUploadRequestSerializer,
+    AppUsageUploadResponseSerializer,
 )
 
 
@@ -279,3 +283,146 @@ def get_record_detail(request):
     serializer.is_valid(raise_exception=True)
 
     return Response(serializer.validated_data, status=status.HTTP_200_OK)
+
+
+# ----------------------------------------------------
+# 10-2 일일 사용량 집계 보조 함수
+# ----------------------------------------------------
+def rebuild_daily_usage_summary_and_top_apps(user, target_date):
+    """
+    특정 날짜의 AppUsage 데이터를 기준으로
+    DailyUsageSummary 와 DailyAppUsageTop 을 다시 계산하는 함수입니다.
+    """
+    usage_qs = AppUsage.objects.filter(
+        user=user,
+        start_time__date=target_date
+    )
+
+    # 총 사용시간 계산
+    total_usage_minutes = 0
+    app_usage_map = {}
+
+    for log in usage_qs:
+        minutes = log.usage_minutes
+        total_usage_minutes += minutes
+        app_usage_map[log.app_name] = app_usage_map.get(log.app_name, 0) + minutes
+
+    # 목표 시간은 현재 단계에서는 가장 단순하게 180분 기본값 사용
+    # 나중에 UserPreferences 와 더 정교하게 연동할 수 있습니다.
+    target_minutes_snapshot = 180
+    goal_achieved = total_usage_minutes <= target_minutes_snapshot
+    goal_exceeded = total_usage_minutes > target_minutes_snapshot
+
+    # DailyUsageSummary 갱신
+    DailyUsageSummary.objects.update_or_create(
+        user=user,
+        date=target_date,
+        defaults={
+            "total_usage_minutes": total_usage_minutes,
+            "unlock_count": 0,
+            "target_minutes_snapshot": target_minutes_snapshot,
+            "goal_achieved": goal_achieved,
+            "goal_exceeded": goal_exceeded,
+        }
+    )
+
+    # 기존 Top5 삭제 후 다시 생성
+    DailyAppUsageTop.objects.filter(user=user, date=target_date).delete()
+
+    # 사용시간 내림차순 정렬 후 Top5 생성
+    sorted_apps = sorted(
+        app_usage_map.items(),
+        key=lambda x: x[1],
+        reverse=True
+    )[:5]
+
+    for idx, (app_name, usage_minutes) in enumerate(sorted_apps, start=1):
+        DailyAppUsageTop.objects.create(
+            user=user,
+            date=target_date,
+            rank=idx,
+            app_name=app_name,
+            usage_minutes=usage_minutes,
+        )
+
+
+# ----------------------------------------------------
+# 10-1 모바일 사용량 업로드 API
+# ----------------------------------------------------
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def upload_app_usage_logs(request):
+    """
+    [POST] /api/usage/logs/upload/
+
+    Flutter/Android 쪽에서 수집한 앱 사용 기록을 백엔드에 저장하는 API 입니다.
+
+    요청 예시:
+    {
+        "user_id": 1,
+        "usage_logs": [
+            {
+                "app_name": "YouTube",
+                "category_name": "Video",
+                "usage_type": "foreground",
+                "start_time": "2026-04-15T09:00:00+09:00",
+                "end_time": "2026-04-15T09:40:00+09:00"
+            }
+        ]
+    }
+    """
+    serializer = AppUsageUploadRequestSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+
+    validated_data = serializer.validated_data
+    user_id = validated_data["user_id"]
+    usage_logs = validated_data["usage_logs"]
+
+    user = User.objects.filter(id=user_id).first()
+    if not user:
+        return Response(
+            {"detail": "해당 사용자를 찾을 수 없습니다."},
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+    saved_count = 0
+
+    with transaction.atomic():
+        for item in usage_logs:
+            category = None
+
+            # category_name 이 있으면 카테고리 테이블에서 찾거나 새로 생성합니다.
+            category_name = item.get("category_name", "").strip()
+            if category_name:
+                category, _ = AppCategory.objects.get_or_create(category_name=category_name)
+
+            # 앱 사용 기록 저장
+            AppUsage.objects.create(
+                user=user,
+                app_name=item["app_name"],
+                category=category,
+                usage_type=item.get("usage_type", "foreground") or "foreground",
+                start_time=item["start_time"],
+                end_time=item["end_time"],
+            )
+            saved_count += 1
+
+    # 이번 요청에 포함된 날짜들을 모아서 집계를 다시 계산합니다.
+    touched_dates = set()
+
+    for item in usage_logs:
+        touched_dates.add(item["start_time"].date())
+
+    for target_date in touched_dates:
+        rebuild_daily_usage_summary_and_top_apps(user, target_date)
+
+    response_data = {
+        "success": True,
+        "saved_count": saved_count,
+        "message": "앱 사용 기록 업로드가 완료되었습니다.",
+    }
+
+    response_serializer = AppUsageUploadResponseSerializer(data=response_data)
+    response_serializer.is_valid(raise_exception=True)
+
+    return Response(response_serializer.validated_data, status=status.HTTP_201_CREATED)

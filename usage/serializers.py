@@ -119,3 +119,57 @@ class CalendarMonthResponseSerializer(serializers.Serializer):
 
     # 해당 월 날짜 요약 목록
     days = CalendarDaySummarySerializer(many=True)
+
+
+# ----------------------------------------------------
+# 10-1 사용량 업로드용 Serializer
+# ----------------------------------------------------
+class AppUsageUploadItemSerializer(serializers.Serializer):
+    """
+    Flutter/Android 에서 수집한 앱 사용 기록 1개를 검증하는 Serializer 입니다.
+    """
+
+    # 앱 이름
+    app_name = serializers.CharField()
+
+    # 앱 카테고리 이름
+    # 예: Social, Video, Productivity
+    category_name = serializers.CharField(required=False, allow_blank=True)
+
+    # 사용 방식
+    # foreground / background
+    usage_type = serializers.CharField(required=False, allow_blank=True, default="foreground")
+
+    # 사용 시작 시각
+    # ISO 형식 문자열을 받습니다.
+    start_time = serializers.DateTimeField()
+
+    # 사용 종료 시각
+    end_time = serializers.DateTimeField()
+
+
+class AppUsageUploadRequestSerializer(serializers.Serializer):
+    """
+    앱 사용량 업로드 요청 전체를 검증하는 Serializer 입니다.
+    """
+
+    # 업로드 대상 사용자 ID
+    user_id = serializers.IntegerField()
+
+    # 여러 개의 사용량 레코드를 한 번에 받습니다.
+    usage_logs = AppUsageUploadItemSerializer(many=True)
+
+
+class AppUsageUploadResponseSerializer(serializers.Serializer):
+    """
+    앱 사용량 업로드 결과 응답용 Serializer 입니다.
+    """
+
+    # 성공 여부
+    success = serializers.BooleanField()
+
+    # 저장된 레코드 개수
+    saved_count = serializers.IntegerField()
+
+    # 응답 메시지
+    message = serializers.CharField()

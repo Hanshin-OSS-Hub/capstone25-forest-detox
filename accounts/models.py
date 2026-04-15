@@ -118,3 +118,35 @@ class UserNotificationSetting(models.Model):
         관리자 페이지에서 보기 쉬운 문자열 표현입니다.
         """
         return f"{self.user.username} 의 알림 설정"
+
+class UserDeviceToken(models.Model):
+    """
+    사용자 디바이스의 FCM 토큰을 저장하는 모델입니다.
+
+    왜 필요한가?
+    - 실제 푸시 알림을 보내려면 디바이스 토큰이 필요합니다.
+    - 한 사용자가 여러 기기에서 로그인할 수 있으므로
+      User 와 1:N 관계로 둡니다.
+    """
+
+    # 어떤 사용자의 디바이스 토큰인지 저장합니다.
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="device_tokens")
+
+    # FCM 토큰 문자열
+    token = models.CharField(max_length=255, unique=True)
+
+    # 플랫폼 정보
+    # 예: android / ios
+    platform = models.CharField(max_length=20, blank=True, null=True)
+
+    # 현재 활성 상태인지
+    is_active = models.BooleanField(default=True)
+
+    # 생성 시각
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    # 마지막 수정 시각
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.user.username} - {self.platform} - {self.token[:12]}"

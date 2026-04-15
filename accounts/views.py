@@ -28,10 +28,11 @@ from .serializers import (
     UserNotificationSettingSerializer,
     SettingsSummaryResponseSerializer,
     NotificationSettingSerializer,
+    DeviceTokenSerializer,
 )
 
 # 알림 설정 모델을 import 합니다.
-from .models import UserNotificationSetting
+from .models import UserNotificationSetting, UserDeviceToken
 
 # 현재 User 모델을 변수로 꺼내둡니다.
 User = get_user_model()
@@ -491,6 +492,48 @@ class NotificationSettingView(APIView):
             status=status.HTTP_400_BAD_REQUEST
         )
 
+# ----------------------------------------------------
+# 10-3 FCM 디바이스 토큰 저장 API
+# ----------------------------------------------------
+class DeviceTokenRegisterView(APIView):
+    """
+    [POST] /api/accounts/device-token/
+
+    Flutter 앱에서 FCM 토큰을 백엔드에 등록하는 API 입니다.
+
+    요청 예시:
+    {
+        "token": "FCM_DEVICE_TOKEN",
+        "platform": "android"
+    }
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        serializer = DeviceTokenSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        token = serializer.validated_data["token"]
+        platform = serializer.validated_data.get("platform", "")
+
+        device_token, _ = UserDeviceToken.objects.update_or_create(
+            token=token,
+            defaults={
+                "user": request.user,
+                "platform": platform,
+                "is_active": True,
+            }
+        )
+
+        return Response(
+            {
+                "success": True,
+                "token": device_token.token,
+                "platform": device_token.platform,
+                "message": "디바이스 토큰이 등록되었습니다.",
+            },
+            status=status.HTTP_200_OK
+        )
 
 class LogoutView(APIView):
     """
@@ -531,3 +574,4 @@ class LogoutView(APIView):
             },
             status=status.HTTP_200_OK
         )
+

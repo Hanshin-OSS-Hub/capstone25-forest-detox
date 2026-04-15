@@ -17,6 +17,7 @@ from .views import (
     NotificationSettingView,
     SettingsSummaryView,
     NotificationSettingUpdateView,
+    DeviceTokenRegisterView,
 )
 
 urlpatterns = [
@@ -49,4 +50,7 @@ urlpatterns = [
 
     # 설정 탭 알림 설정 수정
     path("settings/notifications/", NotificationSettingUpdateView.as_view(), name="settings-notifications-update"),
+
+    # FCM 디바이스 토큰 등록
+    path("device-token/", DeviceTokenRegisterView.as_view(), name="device-token-register"),
 ]

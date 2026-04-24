@@ -1,2 +1,16 @@
+# AI & API
 google-generativeai
+openai
 python-dotenv
+
+# AI Model (감정 분석)
+transformers
+torch
+
+# Django Web Framework
+django
+django-environ
+djangorestframework
+djangorestframework-simplejwt
+jango-cors-headers
+drf-yasg

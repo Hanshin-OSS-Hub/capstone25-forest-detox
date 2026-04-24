@@ -4,5 +4,6 @@ from .models import User
 
 @admin.register(User)
 class UserAdmin(admin.ModelAdmin):
-    list_display = ("id", "username", "email", "provider", "provider_uid")
-    search_fields = ("username", "email", "provider")
+    # 에러를 유발하던 provider, provider_uid 필드 삭제
+    list_display = ("id", "username", "email")
+    search_fields = ("username", "email")

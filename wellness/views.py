@@ -35,6 +35,9 @@ from .serializers import (
     ChallengeGenerationResponseSerializer,
 )
 
+# Swagger 문서에서 요청/응답 구조와 예시를 표시하기 위해 사용합니다.
+from drf_spectacular.utils import extend_schema, OpenApiExample
+
 logger = logging.getLogger(__name__)
 
 # ----------------------------------------------------
@@ -837,6 +840,21 @@ def complete_monthly_challenge(request, challenge_id):
 # ----------------------------------------------------
 # 7-8 일간 챌린지 생성 API
 # ----------------------------------------------------
+# ----------------------------------------------------
+# Swagger 문서 설정 - 일간 챌린지 생성 API
+# ----------------------------------------------------
+@extend_schema(
+    examples=[
+        OpenApiExample(
+            name="일간 챌린지 생성 요청 예시",
+            value={
+                "user_id": 1,
+                "difficulty": "intermediate"
+            },
+            request_only=True,
+        )
+    ],
+)
 @api_view(["POST"])
 @permission_classes([AllowAny])
 def generate_daily_challenges(request):

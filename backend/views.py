@@ -5,6 +5,7 @@
 from django.http import JsonResponse
 
 
+
 def root_health_check(request):
     """
     프로젝트 루트 주소(/)로 접속했을 때

@@ -31,6 +31,9 @@ from .serializers import (
     DeviceTokenSerializer,
 )
 
+# Swagger 문서에서 요청/응답 구조와 예시를 명확하게 표시하기 위해 사용합니다.
+from drf_spectacular.utils import extend_schema, OpenApiExample
+
 # 알림 설정 모델을 import 합니다.
 from .models import UserNotificationSetting, UserDeviceToken
 
@@ -60,7 +63,26 @@ def map_firebase_provider(sign_in_provider: str) -> str:
 
     return User.ProviderChoices.FIREBASE
 
-
+# ----------------------------------------------------
+# Swagger 문서 설정 - 회원가입 API
+# ----------------------------------------------------
+@extend_schema(
+    request=SignUpSerializer,
+    responses={
+        201: SignUpSerializer,
+    },
+    examples=[
+        OpenApiExample(
+            name="회원가입 요청 예시",
+            value={
+                "username": "testuser1",
+                "email": "testuser1@example.com",
+                "password": "Test1234!"
+            },
+            request_only=True,
+        )
+    ],
+)
 class SignUpView(APIView):
     """
     일반 회원가입 API 입니다.
@@ -97,7 +119,25 @@ class SignUpView(APIView):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-
+# ----------------------------------------------------
+# Swagger 문서 설정 - 로그인 API
+# ----------------------------------------------------
+@extend_schema(
+    request=EmailOrUsernameTokenObtainPairSerializer,
+    responses={
+        200: EmailOrUsernameTokenObtainPairSerializer,
+    },
+    examples=[
+        OpenApiExample(
+            name="로그인 요청 예시",
+            value={
+                "username": "testuser1",
+                "password": "Test1234!"
+            },
+            request_only=True,
+        )
+    ],
+)
 class EmailLoginView(TokenObtainPairView):
     """
     이메일 또는 username 기반 JWT 로그인 API 입니다.
@@ -386,6 +426,25 @@ class SettingsSummaryView(APIView):
 # ----------------------------------------------------
 # 9-3 알림 설정 수정 API
 # ----------------------------------------------------
+# ----------------------------------------------------
+# Swagger 문서 설정 - 설정 탭 알림 수정 API
+# ----------------------------------------------------
+@extend_schema(
+    request=NotificationSettingSerializer,
+    responses={
+        200: NotificationSettingSerializer,
+    },
+    examples=[
+        OpenApiExample(
+            name="알림 설정 수정 요청 예시",
+            value={
+                "push_notification_enabled": True,
+                "usage_alert_enabled": False
+            },
+            request_only=True,
+        )
+    ],
+)
 class NotificationSettingUpdateView(APIView):
     """
     [PATCH] /api/accounts/settings/notifications/
@@ -495,6 +554,25 @@ class NotificationSettingView(APIView):
 # ----------------------------------------------------
 # 10-3 FCM 디바이스 토큰 저장 API
 # ----------------------------------------------------
+# ----------------------------------------------------
+# Swagger 문서 설정 - FCM 디바이스 토큰 등록 API
+# ----------------------------------------------------
+@extend_schema(
+    request=DeviceTokenSerializer,
+    responses={
+        200: DeviceTokenSerializer,
+    },
+    examples=[
+        OpenApiExample(
+            name="FCM 디바이스 토큰 등록 요청 예시",
+            value={
+                "token": "sample_fcm_token_123456",
+                "platform": "android"
+            },
+            request_only=True,
+        )
+    ],
+)
 class DeviceTokenRegisterView(APIView):
     """
     [POST] /api/accounts/device-token/

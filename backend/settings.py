@@ -45,7 +45,11 @@ DEBUG = env.bool("DEBUG", default=True)
 
 # 현재는 개발 편의를 위해 전체 호스트를 허용합니다.
 # 배포 시에는 실제 도메인/서버 주소만 넣어야 합니다.
-ALLOWED_HOSTS = ["*"]
+ALLOWED_HOSTS = [
+    "127.0.0.1",
+    "localhost",
+    ".elasticbeanstalk.com"
+]
 
 # -------------------------------------------------------------------
 # 4. 앱 등록

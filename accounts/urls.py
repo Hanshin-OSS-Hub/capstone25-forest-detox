@@ -1,12 +1,11 @@
 # accounts/urls.py
 
 # Django path 함수를 import 합니다.
-from django.urls import path
+# accounts/urls.py
 
-# SimpleJWT 기본 refresh 토큰 재발급 view 입니다.
+from django.urls import path
 from rest_framework_simplejwt.views import TokenRefreshView
 
-# accounts 앱의 view 들을 import 합니다.
 from .views import (
     SignUpView,
     EmailLoginView,
@@ -21,36 +20,36 @@ from .views import (
 )
 
 urlpatterns = [
-    # 일반 회원가입
+    # 회원가입
     path("signup/", SignUpView.as_view(), name="signup"),
 
-    # 일반 로그인 (email 또는 username + password)
+    # 일반 로그인(JWT 발급)
     path("login/", EmailLoginView.as_view(), name="login"),
 
-    # access 토큰 재발급
+    # access 재발급(refresh 토큰 사용)
     path("refresh/", TokenRefreshView.as_view(), name="refresh"),
 
-    # 내 정보 조회
+    # 현재 로그인한 사용자 기본 정보 조회
     path("me/", MeView.as_view(), name="me"),
-
-    # 로그아웃
-    path("logout/", LogoutView.as_view(), name="logout"),
 
     # Firebase 로그인
     path("firebase/login/", FirebaseLoginView.as_view(), name="firebase_login"),
 
-    # Firebase 계정 연결
+    # 현재 로그인한 local 계정에 Firebase 계정 연결
     path("firebase/link/", FirebaseLinkView.as_view(), name="firebase_link"),
 
-    # 알림 설정 조회 / 수정
-    path("notification-settings/", NotificationSettingView.as_view(), name="notification_settings"),
+    # 백엔드 로그아웃(refresh 토큰 블랙리스트 처리)
+    path("logout/", LogoutView.as_view(), name="logout"),
 
-    # 설정 탭 전체 요약 조회
+    # 기존 알림 설정 조회/수정 API
+    path("notification-settings/", NotificationSettingView.as_view(), name="notification-settings"),
+
+    # 설정 탭 전체 요약 조회 API
     path("settings/", SettingsSummaryView.as_view(), name="settings-summary"),
 
-    # 설정 탭 알림 설정 수정
+    # 설정 탭 알림 설정 수정 API
     path("settings/notifications/", NotificationSettingUpdateView.as_view(), name="settings-notifications-update"),
 
-    # FCM 디바이스 토큰 등록
+    # FCM 디바이스 토큰 등록 API
     path("device-token/", DeviceTokenRegisterView.as_view(), name="device-token-register"),
 ]

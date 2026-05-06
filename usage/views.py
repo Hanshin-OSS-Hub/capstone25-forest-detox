@@ -18,6 +18,9 @@ from .serializers import (
     AppUsageUploadResponseSerializer,
 )
 
+# Swagger 문서에서 요청/응답 구조를 명확히 표시하기 위해 사용합니다.
+from drf_spectacular.utils import extend_schema, OpenApiExample
+
 
 # ----------------------------------------------------
 # 8-2 기록 탭 보조 함수 - 대표 감정 조회
@@ -349,6 +352,37 @@ def rebuild_daily_usage_summary_and_top_apps(user, target_date):
 # ----------------------------------------------------
 # 10-1 모바일 사용량 업로드 API
 # ----------------------------------------------------
+@extend_schema(
+    request=AppUsageUploadRequestSerializer,
+    responses={
+        201: AppUsageUploadResponseSerializer,
+    },
+    examples=[
+        OpenApiExample(
+            name="앱 사용량 업로드 예시",
+            value={
+                "user_id": 2,
+                "usage_logs": [
+                    {
+                        "app_name": "YouTube",
+                        "category_name": "Video",
+                        "usage_type": "foreground",
+                        "start_time": "2026-04-15T09:00:00+09:00",
+                        "end_time": "2026-04-15T09:40:00+09:00"
+                    },
+                    {
+                        "app_name": "Instagram",
+                        "category_name": "Social",
+                        "usage_type": "foreground",
+                        "start_time": "2026-04-15T10:00:00+09:00",
+                        "end_time": "2026-04-15T10:25:00+09:00"
+                    }
+                ]
+            },
+            request_only=True,
+        )
+    ],
+)
 @api_view(["POST"])
 @permission_classes([AllowAny])
 def upload_app_usage_logs(request):

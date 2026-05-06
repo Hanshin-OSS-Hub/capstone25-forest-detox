@@ -70,6 +70,10 @@ INSTALLED_APPS = [
     "accounts",
     "wellness",
     "usage",
+
+    # Swagger/OpenAPI 문서 자동 생성을 위한 앱입니다.
+    # drf-spectacular를 사용하면 현재 Django REST API 목록을 문서 화면으로 볼 수 있습니다.
+    "drf_spectacular",
 ]
 
 # -------------------------------------------------------------------
@@ -167,9 +171,12 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 AUTH_USER_MODEL = "accounts.User"
 
 # -------------------------------------------------------------------
-# 12. DRF / JWT 설정
+# 12. DRF / JWT 설정 / Swagger 설정
 # -------------------------------------------------------------------
 REST_FRAMEWORK = {
+    # drf-spectacular가 우리 API 구조를 읽어서 OpenAPI 문서를 만들도록 설정합니다.
+    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+
     # 기본 인증 방식을 JWT 로 사용합니다.
     "DEFAULT_AUTHENTICATION_CLASSES": (
         "rest_framework_simplejwt.authentication.JWTAuthentication",
@@ -197,3 +204,19 @@ FIREBASE_SERVICE_ACCOUNT_PATH = os.getenv(
 #if not firebase_admin._apps:
 #  cred = credentials.Certificate(FIREBASE_SERVICE_ACCOUNT_PATH)
 #  firebase_admin.initialize_app(cred)
+#------------------------------------------------------
+# drf-spectacular가 생성하는 API 문서의 기본 정보입니다.
+# Swagger 화면 상단에 표시됩니다.
+SPECTACULAR_SETTINGS = {
+    # API 문서 제목입니다.
+    "TITLE": "Forest Detox API",
+
+    # API 설명입니다.
+    "DESCRIPTION": "AI 디지털 디톡스 코치 앱 백엔드 API 문서입니다.",
+
+    # 현재 API 버전입니다.
+    "VERSION": "1.0.0",
+
+    # Swagger UI에서 인증 버튼을 사용할 수 있게 합니다.
+    "SERVE_INCLUDE_SCHEMA": False,
+}
